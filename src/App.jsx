@@ -1,11 +1,13 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Box, AppBar, Toolbar } from '@mui/material';
+import { Box, Toolbar } from '@mui/material';
 import theme from './theme';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/Jobs';
+import Companies from './pages/Companies';
+import CompanyDetail from './pages/CompanyDetail';
 import Networking from './pages/Networking';
 import ResumeStudio from './pages/ResumeStudio';
 import Library from './pages/Library';
@@ -25,6 +27,8 @@ function AppContent() {
         <Toolbar sx={{ display: { sm: 'none' } }} /> 
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/companies" element={<Companies />} />
+          <Route path="/companies/:id" element={<CompanyDetail />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/networking" element={<Networking />} />
           <Route path="/resume" element={<ResumeStudio />} />

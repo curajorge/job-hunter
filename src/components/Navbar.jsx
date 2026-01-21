@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Drawer, List, ListItem, ListItemIcon, ListItemText, Typography, Divider } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import ViewKanbanIcon from '@mui/icons-material/ViewKanban';
+import BusinessIcon from '@mui/icons-material/Business';
 import PeopleIcon from '@mui/icons-material/People';
 import DescriptionIcon from '@mui/icons-material/Description';
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
@@ -11,10 +12,14 @@ const drawerWidth = 240;
 function Navbar() {
   const location = useLocation();
   
-  const isActive = (path) => location.pathname === path;
+  const isActive = (path) => {
+    if (path === '/') return location.pathname === '/';
+    return location.pathname.startsWith(path);
+  };
 
   const menuItems = [
     { text: 'Command Center', icon: <DashboardIcon />, path: '/' },
+    { text: 'Companies', icon: <BusinessIcon />, path: '/companies' },
     { text: 'Pipeline', icon: <ViewKanbanIcon />, path: '/jobs' },
     { text: 'Network', icon: <PeopleIcon />, path: '/networking' },
     { text: 'Resume Studio', icon: <DescriptionIcon />, path: '/resume' },
