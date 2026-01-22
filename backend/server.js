@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const db = require('./database');
 
 const app = express();
@@ -8,7 +9,6 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Middleware to enforce JSON content type and UTF-8 charset
 app.use((req, res, next) => {
   res.header('Content-Type', 'application/json; charset=utf-8');
   next();
@@ -19,12 +19,10 @@ app.use((req, res, next) => {
 // 1. GET Full Dashboard Data
 app.get('/api/dashboard', (req, res, next) => {
   try {
-    // Note: .all() returns an array of objects in node:sqlite
     const companies = db.prepare('SELECT * FROM companies').all();
     const jobs = db.prepare('SELECT * FROM jobs').all();
     const contacts = db.prepare('SELECT * FROM contacts').all();
 
-    // Helper to join company name to job/contact
     const enrich = (items) => items.map(item => {
       const comp = companies.find(c => c.id === item.company_id);
       return { ...item, company: comp ? comp.name : 'Unknown' };
@@ -40,7 +38,10 @@ app.get('/api/dashboard', (req, res, next) => {
   }
 });
 
-// 2. COMPANIES
+// ===================
+// 2. COMPANIES CRUD
+// ===================
+
 app.get('/api/companies', (req, res, next) => {
   try {
     const rows = db.prepare('SELECT * FROM companies').all();
@@ -64,18 +65,156 @@ app.get('/api/companies/:id', (req, res, next) => {
   }
 });
 
-// 3. JOBS
+app.post('/api/companies', (req, res, next) => {
+  try {
+    const { name, domain, website, description } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Company name is required' });
+    }
+    
+    const id = 'c' + crypto.randomUUID().split('-')[0];
+    
+    const stmt = db.prepare(
+      'INSERT INTO companies (id, name, domain, website, description) VALUES (?, ?, ?, ?, ?)'
+    );
+    stmt.run(id, name.trim(), domain || null, website || null, description || null);
+    
+    res.status(201).json({ id, name: name.trim(), domain, website, description });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/companies/:id', (req, res, next) => {
+  try {
+    const { name, domain, website, description } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Company name is required' });
+    }
+    
+    const stmt = db.prepare(
+      'UPDATE companies SET name = ?, domain = ?, website = ?, description = ? WHERE id = ?'
+    );
+    const info = stmt.run(name.trim(), domain || null, website || null, description || null, req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+    
+    res.json({ id: req.params.id, name: name.trim(), domain, website, description });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/companies/:id', (req, res, next) => {
+  try {
+    const stmt = db.prepare('DELETE FROM companies WHERE id = ?');
+    const info = stmt.run(req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+    
+    res.json({ success: true, id: req.params.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===================
+// 3. JOBS CRUD
+// ===================
+
+app.get('/api/jobs', (req, res, next) => {
+  try {
+    const rows = db.prepare('SELECT * FROM jobs').all();
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/jobs/:id', (req, res, next) => {
+  try {
+    const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json(job);
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.post('/api/jobs', (req, res, next) => {
   try {
     const { company_id, role, status, salary, next_action, date } = req.body;
+    
+    if (!role || !role.trim()) {
+      return res.status(400).json({ error: 'Job role is required' });
+    }
+    
     const stmt = db.prepare(
       'INSERT INTO jobs (company_id, role, status, salary, next_action, date) VALUES (?, ?, ?, ?, ?, ?)'
     );
+    const info = stmt.run(
+      company_id || null,
+      role.trim(),
+      status || 'Wishlist',
+      salary || null,
+      next_action || null,
+      date || null
+    );
     
-    // node:sqlite .run() expects arguments for '?' placeholders
-    const info = stmt.run(company_id, role, status, salary, next_action, date);
+    res.status(201).json({
+      id: Number(info.lastInsertRowid),
+      company_id,
+      role: role.trim(),
+      status: status || 'Wishlist',
+      salary,
+      next_action,
+      date
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/jobs/:id', (req, res, next) => {
+  try {
+    const { company_id, role, status, salary, next_action, date } = req.body;
     
-    res.status(201).json({ id: info.lastInsertRowid, ...req.body });
+    if (!role || !role.trim()) {
+      return res.status(400).json({ error: 'Job role is required' });
+    }
+    
+    const stmt = db.prepare(
+      'UPDATE jobs SET company_id = ?, role = ?, status = ?, salary = ?, next_action = ?, date = ? WHERE id = ?'
+    );
+    const info = stmt.run(
+      company_id || null,
+      role.trim(),
+      status || 'Wishlist',
+      salary || null,
+      next_action || null,
+      date || null,
+      req.params.id
+    );
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    
+    res.json({
+      id: parseInt(req.params.id),
+      company_id,
+      role: role.trim(),
+      status: status || 'Wishlist',
+      salary,
+      next_action,
+      date
+    });
   } catch (err) {
     next(err);
   }
@@ -94,6 +233,161 @@ app.patch('/api/jobs/:id/status', (req, res, next) => {
   }
 });
 
+app.delete('/api/jobs/:id', (req, res, next) => {
+  try {
+    const stmt = db.prepare('DELETE FROM jobs WHERE id = ?');
+    const info = stmt.run(req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    
+    res.json({ success: true, id: parseInt(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===================
+// 4. CONTACTS CRUD
+// ===================
+
+app.get('/api/contacts', (req, res, next) => {
+  try {
+    const rows = db.prepare('SELECT * FROM contacts').all();
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/contacts/:id', (req, res, next) => {
+  try {
+    const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    res.json(contact);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/contacts', (req, res, next) => {
+  try {
+    const { company_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Contact name is required' });
+    }
+    
+    const stmt = db.prepare(
+      'INSERT INTO contacts (company_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    const info = stmt.run(
+      company_id || null,
+      name.trim(),
+      role || null,
+      bucket || 'Recruiters',
+      email || null,
+      linkedin_url || null,
+      phone || null,
+      last_contact || null,
+      notes || null
+    );
+    
+    res.status(201).json({
+      id: Number(info.lastInsertRowid),
+      company_id,
+      name: name.trim(),
+      role,
+      bucket: bucket || 'Recruiters',
+      email,
+      linkedin_url,
+      phone,
+      last_contact,
+      notes
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/contacts/:id', (req, res, next) => {
+  try {
+    const { company_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Contact name is required' });
+    }
+    
+    const stmt = db.prepare(
+      'UPDATE contacts SET company_id = ?, name = ?, role = ?, bucket = ?, email = ?, linkedin_url = ?, phone = ?, last_contact = ?, notes = ? WHERE id = ?'
+    );
+    const info = stmt.run(
+      company_id || null,
+      name.trim(),
+      role || null,
+      bucket || 'Recruiters',
+      email || null,
+      linkedin_url || null,
+      phone || null,
+      last_contact || null,
+      notes || null,
+      req.params.id
+    );
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+    
+    res.json({
+      id: parseInt(req.params.id),
+      company_id,
+      name: name.trim(),
+      role,
+      bucket: bucket || 'Recruiters',
+      email,
+      linkedin_url,
+      phone,
+      last_contact,
+      notes
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH - Mark contact as contacted (updates last_contact to today)
+app.patch('/api/contacts/:id/touch', (req, res, next) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const stmt = db.prepare('UPDATE contacts SET last_contact = ? WHERE id = ?');
+    const info = stmt.run(today, req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+    
+    res.json({ success: true, last_contact: today });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/contacts/:id', (req, res, next) => {
+  try {
+    const stmt = db.prepare('DELETE FROM contacts WHERE id = ?');
+    const info = stmt.run(req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+    
+    res.json({ success: true, id: parseInt(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
   console.error('🔥 Server Error:', err.stack);
@@ -106,7 +400,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT} (Node v${process.version})`);
 });

@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     name TEXT NOT NULL,
     role TEXT,
     bucket TEXT, -- Recruiters, Hiring Managers, Former Colleagues
+    email TEXT,
+    linkedin_url TEXT,
+    phone TEXT,
     last_contact TEXT,
     notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
