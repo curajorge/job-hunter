@@ -141,7 +141,29 @@ app.get('/api/jobs/:id', (req, res, next) => {
   try {
     const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
-    res.json(job);
+    
+    // Get company info
+    const company = job.company_id 
+      ? db.prepare('SELECT * FROM companies WHERE id = ?').get(job.company_id)
+      : null;
+    
+    // Get activities for this job
+    const activities = db.prepare(
+      'SELECT * FROM job_activities WHERE job_id = ? ORDER BY date DESC, created_at DESC'
+    ).all(req.params.id);
+    
+    // Get contacts linked to this job
+    const contacts = db.prepare(
+      'SELECT * FROM contacts WHERE job_id = ?'
+    ).all(req.params.id);
+    
+    res.json({ 
+      ...job, 
+      company: company ? company.name : 'Unknown',
+      companyData: company,
+      activities,
+      contacts
+    });
   } catch (err) {
     next(err);
   }
@@ -149,14 +171,14 @@ app.get('/api/jobs/:id', (req, res, next) => {
 
 app.post('/api/jobs', (req, res, next) => {
   try {
-    const { company_id, role, status, salary, next_action, date } = req.body;
+    const { company_id, role, status, salary, next_action, date, description, notes } = req.body;
     
     if (!role || !role.trim()) {
       return res.status(400).json({ error: 'Job role is required' });
     }
     
     const stmt = db.prepare(
-      'INSERT INTO jobs (company_id, role, status, salary, next_action, date) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO jobs (company_id, role, status, salary, next_action, date, description, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const info = stmt.run(
       company_id || null,
@@ -164,7 +186,9 @@ app.post('/api/jobs', (req, res, next) => {
       status || 'Wishlist',
       salary || null,
       next_action || null,
-      date || null
+      date || null,
+      description || null,
+      notes || null
     );
     
     res.status(201).json({
@@ -174,7 +198,9 @@ app.post('/api/jobs', (req, res, next) => {
       status: status || 'Wishlist',
       salary,
       next_action,
-      date
+      date,
+      description,
+      notes
     });
   } catch (err) {
     next(err);
@@ -183,14 +209,14 @@ app.post('/api/jobs', (req, res, next) => {
 
 app.put('/api/jobs/:id', (req, res, next) => {
   try {
-    const { company_id, role, status, salary, next_action, date } = req.body;
+    const { company_id, role, status, salary, next_action, date, description, notes } = req.body;
     
     if (!role || !role.trim()) {
       return res.status(400).json({ error: 'Job role is required' });
     }
     
     const stmt = db.prepare(
-      'UPDATE jobs SET company_id = ?, role = ?, status = ?, salary = ?, next_action = ?, date = ? WHERE id = ?'
+      'UPDATE jobs SET company_id = ?, role = ?, status = ?, salary = ?, next_action = ?, date = ?, description = ?, notes = ? WHERE id = ?'
     );
     const info = stmt.run(
       company_id || null,
@@ -199,6 +225,8 @@ app.put('/api/jobs/:id', (req, res, next) => {
       salary || null,
       next_action || null,
       date || null,
+      description || null,
+      notes || null,
       req.params.id
     );
     
@@ -213,7 +241,9 @@ app.put('/api/jobs/:id', (req, res, next) => {
       status: status || 'Wishlist',
       salary,
       next_action,
-      date
+      date,
+      description,
+      notes
     });
   } catch (err) {
     next(err);
@@ -249,7 +279,70 @@ app.delete('/api/jobs/:id', (req, res, next) => {
 });
 
 // ===================
-// 4. CONTACTS CRUD
+// 4. JOB ACTIVITIES
+// ===================
+
+app.get('/api/jobs/:jobId/activities', (req, res, next) => {
+  try {
+    const activities = db.prepare(
+      'SELECT * FROM job_activities WHERE job_id = ? ORDER BY date DESC, created_at DESC'
+    ).all(req.params.jobId);
+    res.json(activities);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/jobs/:jobId/activities', (req, res, next) => {
+  try {
+    const { type, date, notes } = req.body;
+    
+    if (!type || !type.trim()) {
+      return res.status(400).json({ error: 'Activity type is required' });
+    }
+    if (!date) {
+      return res.status(400).json({ error: 'Activity date is required' });
+    }
+    
+    const stmt = db.prepare(
+      'INSERT INTO job_activities (job_id, type, date, notes) VALUES (?, ?, ?, ?)'
+    );
+    const info = stmt.run(
+      req.params.jobId,
+      type.trim(),
+      date,
+      notes || null
+    );
+    
+    res.status(201).json({
+      id: Number(info.lastInsertRowid),
+      job_id: parseInt(req.params.jobId),
+      type: type.trim(),
+      date,
+      notes
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/activities/:id', (req, res, next) => {
+  try {
+    const stmt = db.prepare('DELETE FROM job_activities WHERE id = ?');
+    const info = stmt.run(req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+    
+    res.json({ success: true, id: parseInt(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===================
+// 5. CONTACTS CRUD
 // ===================
 
 app.get('/api/contacts', (req, res, next) => {
@@ -273,17 +366,18 @@ app.get('/api/contacts/:id', (req, res, next) => {
 
 app.post('/api/contacts', (req, res, next) => {
   try {
-    const { company_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes } = req.body;
+    const { company_id, job_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes } = req.body;
     
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Contact name is required' });
     }
     
     const stmt = db.prepare(
-      'INSERT INTO contacts (company_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO contacts (company_id, job_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const info = stmt.run(
       company_id || null,
+      job_id || null,
       name.trim(),
       role || null,
       bucket || 'Recruiters',
@@ -297,6 +391,7 @@ app.post('/api/contacts', (req, res, next) => {
     res.status(201).json({
       id: Number(info.lastInsertRowid),
       company_id,
+      job_id,
       name: name.trim(),
       role,
       bucket: bucket || 'Recruiters',
@@ -313,17 +408,18 @@ app.post('/api/contacts', (req, res, next) => {
 
 app.put('/api/contacts/:id', (req, res, next) => {
   try {
-    const { company_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes } = req.body;
+    const { company_id, job_id, name, role, bucket, email, linkedin_url, phone, last_contact, notes } = req.body;
     
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Contact name is required' });
     }
     
     const stmt = db.prepare(
-      'UPDATE contacts SET company_id = ?, name = ?, role = ?, bucket = ?, email = ?, linkedin_url = ?, phone = ?, last_contact = ?, notes = ? WHERE id = ?'
+      'UPDATE contacts SET company_id = ?, job_id = ?, name = ?, role = ?, bucket = ?, email = ?, linkedin_url = ?, phone = ?, last_contact = ?, notes = ? WHERE id = ?'
     );
     const info = stmt.run(
       company_id || null,
+      job_id || null,
       name.trim(),
       role || null,
       bucket || 'Recruiters',
@@ -342,6 +438,7 @@ app.put('/api/contacts/:id', (req, res, next) => {
     res.json({
       id: parseInt(req.params.id),
       company_id,
+      job_id,
       name: name.trim(),
       role,
       bucket: bucket || 'Recruiters',
@@ -356,7 +453,6 @@ app.put('/api/contacts/:id', (req, res, next) => {
   }
 });
 
-// PATCH - Mark contact as contacted (updates last_contact to today)
 app.patch('/api/contacts/:id/touch', (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];

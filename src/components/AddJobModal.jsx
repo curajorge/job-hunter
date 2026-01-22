@@ -27,10 +27,11 @@ function AddJobModal({ open, onClose, preselectedCompanyId = null }) {
     status: 'Wishlist',
     salary: '',
     nextAction: '',
-    date: ''
+    date: '',
+    description: '',
+    notes: ''
   });
 
-  // Update companyId when preselectedCompanyId changes
   useEffect(() => {
     if (preselectedCompanyId) {
       setForm(prev => ({ ...prev, companyId: preselectedCompanyId }));
@@ -60,7 +61,9 @@ function AddJobModal({ open, onClose, preselectedCompanyId = null }) {
         status: 'Wishlist',
         salary: '',
         nextAction: '',
-        date: ''
+        date: '',
+        description: '',
+        notes: ''
       });
       onClose();
     } catch (err) {
@@ -77,7 +80,9 @@ function AddJobModal({ open, onClose, preselectedCompanyId = null }) {
       status: 'Wishlist',
       salary: '',
       nextAction: '',
-      date: ''
+      date: '',
+      description: '',
+      notes: ''
     });
     setError(null);
     onClose();
@@ -158,6 +163,28 @@ function AddJobModal({ open, onClose, preselectedCompanyId = null }) {
               onChange={handleChange}
               fullWidth
               InputLabelProps={{ shrink: true }}
+            />
+
+            <TextField
+              name="description"
+              label="Job Description"
+              value={form.description}
+              onChange={handleChange}
+              fullWidth
+              multiline
+              rows={4}
+              placeholder="Paste the job description here..."
+            />
+
+            <TextField
+              name="notes"
+              label="Notes"
+              value={form.notes}
+              onChange={handleChange}
+              fullWidth
+              multiline
+              rows={2}
+              placeholder="Your notes/impressions..."
             />
           </Stack>
         </DialogContent>

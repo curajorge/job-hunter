@@ -60,6 +60,7 @@ export const JobProvider = ({ children }) => {
     ...contact,
     lastContact: contact.last_contact ?? contact.lastContact,
     companyId: contact.company_id ?? contact.companyId,
+    jobId: contact.job_id ?? contact.jobId,
     linkedinUrl: contact.linkedin_url ?? contact.linkedinUrl
   }), []);
 
@@ -184,7 +185,9 @@ export const JobProvider = ({ children }) => {
           status: job.status || 'Wishlist',
           salary: job.salary,
           next_action: job.nextAction,
-          date: job.date
+          date: job.date,
+          description: job.description,
+          notes: job.notes
         })
       });
       if (!response.ok) {
@@ -212,7 +215,9 @@ export const JobProvider = ({ children }) => {
           status: updates.status,
           salary: updates.salary,
           next_action: updates.nextAction,
-          date: updates.date
+          date: updates.date,
+          description: updates.description,
+          notes: updates.notes
         })
       });
       if (!response.ok) {
@@ -257,6 +262,8 @@ export const JobProvider = ({ children }) => {
         throw new Error(err.error || 'Failed to delete job');
       }
       setJobsState(prev => prev.filter(j => j.id !== id));
+      // Also remove contacts linked to this job
+      setPeople(prev => prev.filter(p => p.jobId !== id));
     } catch (err) {
       console.error('Error deleting job:', err);
       throw err;
@@ -277,6 +284,67 @@ export const JobProvider = ({ children }) => {
     }
   };
 
+  // Fetch single job with full details (activities, contacts)
+  const fetchJobDetail = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${id}`);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to fetch job');
+      }
+      const data = await response.json();
+      return {
+        ...normalizeJob(data),
+        activities: data.activities || [],
+        contacts: (data.contacts || []).map(normalizeContact)
+      };
+    } catch (err) {
+      console.error('Error fetching job detail:', err);
+      throw err;
+    }
+  };
+
+  // ===================
+  // ACTIVITY ACTIONS
+  // ===================
+
+  const addActivity = async (jobId, activity) => {
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${jobId}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: activity.type,
+          date: activity.date,
+          notes: activity.notes
+        })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to create activity');
+      }
+      return await response.json();
+    } catch (err) {
+      console.error('Error adding activity:', err);
+      throw err;
+    }
+  };
+
+  const deleteActivity = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE}/activities/${id}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to delete activity');
+      }
+    } catch (err) {
+      console.error('Error deleting activity:', err);
+      throw err;
+    }
+  };
+
   // ===================
   // CONTACT ACTIONS
   // ===================
@@ -288,6 +356,7 @@ export const JobProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_id: contact.companyId,
+          job_id: contact.jobId,
           name: contact.name,
           role: contact.role,
           bucket: contact.bucket || 'Recruiters',
@@ -319,6 +388,7 @@ export const JobProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_id: updates.companyId,
+          job_id: updates.jobId,
           name: updates.name,
           role: updates.role,
           bucket: updates.bucket,
@@ -343,7 +413,6 @@ export const JobProvider = ({ children }) => {
     }
   };
 
-  // Mark contact as contacted today
   const touchContact = async (id) => {
     try {
       const response = await fetch(`${API_BASE}/contacts/${id}/touch`, {
@@ -391,23 +460,20 @@ export const JobProvider = ({ children }) => {
     return { ...company, jobs: companyJobs, people: companyPeople };
   };
 
-  // Get contacts that need follow-up (>7 days since last contact)
   const getStaleContacts = useCallback((daysThreshold = 7) => {
     const today = new Date();
     return enrichedContacts.filter(c => {
-      if (!c.lastContact) return true; // Never contacted = stale
+      if (!c.lastContact) return true;
       const lastDate = new Date(c.lastContact);
       const diffDays = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
       return diffDays >= daysThreshold;
     }).sort((a, b) => {
-      // Sort by most stale first
       if (!a.lastContact) return -1;
       if (!b.lastContact) return 1;
       return new Date(a.lastContact) - new Date(b.lastContact);
     });
   }, [enrichedContacts]);
 
-  // Get today's outreach count
   const getTodayOutreachCount = useCallback(() => {
     const today = new Date().toISOString().split('T')[0];
     return enrichedContacts.filter(c => c.lastContact === today).length;
@@ -432,6 +498,11 @@ export const JobProvider = ({ children }) => {
     updateJobStatus,
     deleteJob,
     moveJob,
+    fetchJobDetail,
+    
+    // Activity Actions
+    addActivity,
+    deleteActivity,
     
     // Contact Actions
     addContact,

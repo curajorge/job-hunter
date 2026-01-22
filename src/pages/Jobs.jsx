@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useJobContext } from '../store/JobContext';
-import { Box, Typography, Grid, Paper, Chip, IconButton, Stack, CircularProgress } from '@mui/material';
+import { Box, Typography, Grid, Paper, Chip, IconButton, Stack, CircularProgress, Button } from '@mui/material';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import WorkIcon from '@mui/icons-material/Work';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
-import DeleteIcon from '@mui/icons-material/Delete';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import AddIcon from '@mui/icons-material/Add';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import ConfirmDialog from '../components/ConfirmDialog';
+import AddJobModal from '../components/AddJobModal';
 
 // --- Utility for React 18 Strict Mode compatibility ---
 export const StrictModeDroppable = ({ children, ...props }) => {
@@ -32,11 +34,9 @@ const stages = [
 ];
 
 function Jobs() {
-  const { jobs, updateJobStatus, moveJob, deleteJob, loading } = useJobContext();
-  
-  // Delete state
-  const [deleteDialog, setDeleteDialog] = useState({ open: false, job: null });
-  const [deleting, setDeleting] = useState(false);
+  const { jobs, updateJobStatus, moveJob, loading } = useJobContext();
+  const navigate = useNavigate();
+  const [addModalOpen, setAddModalOpen] = useState(false);
 
   const onDragEnd = (result) => {
     const { destination, source, draggableId } = result;
@@ -54,26 +54,10 @@ function Jobs() {
 
   const getJobsByStatus = (status) => jobs.filter(j => j.status === status);
 
-  const openDeleteDialog = (job, e) => {
-    e.stopPropagation();
-    setDeleteDialog({ open: true, job });
-  };
-
-  const closeDeleteDialog = () => {
-    setDeleteDialog({ open: false, job: null });
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!deleteDialog.job) return;
-    setDeleting(true);
-    try {
-      await deleteJob(deleteDialog.job.id);
-      closeDeleteDialog();
-    } catch (err) {
-      console.error('Failed to delete job:', err);
-    } finally {
-      setDeleting(false);
-    }
+  const handleCardClick = (jobId, e) => {
+    // Don't navigate if clicking on a button
+    if (e.target.closest('button')) return;
+    navigate(`/jobs/${jobId}`);
   };
 
   if (loading) {
@@ -86,7 +70,12 @@ function Jobs() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>Pipeline Board</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Typography variant="h4" sx={{ fontWeight: 700 }}>Pipeline Board</Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddModalOpen(true)}>
+          Add Job
+        </Button>
+      </Box>
       
       <DragDropContext onDragEnd={onDragEnd}>
         <Grid container spacing={2}>
@@ -136,23 +125,31 @@ function Jobs() {
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
                               style={provided.draggableProps.style}
+                              onClick={(e) => handleCardClick(job.id, e)}
                               sx={{ 
                                 p: 2, 
                                 bgcolor: '#1e1e1e', 
                                 backgroundImage: 'none',
                                 border: '1px solid rgba(255,255,255,0.05)',
                                 boxShadow: snapshot.isDragging ? 12 : 1,
-                                '&:hover': { borderColor: 'rgba(255,255,255,0.2)' }
+                                cursor: 'pointer',
+                                '&:hover': { 
+                                  borderColor: 'rgba(255,255,255,0.2)',
+                                  bgcolor: '#252525'
+                                }
                               }}
                             >
                               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                                 <Typography variant="subtitle1" fontWeight="bold">{job.company}</Typography>
                                 <IconButton 
                                   size="small"
-                                  onClick={(e) => openDeleteDialog(job, e)}
-                                  sx={{ opacity: 0.4, '&:hover': { opacity: 1, color: 'error.main' }, ml: 1, mt: -0.5 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigate(`/jobs/${job.id}`);
+                                  }}
+                                  sx={{ opacity: 0.4, '&:hover': { opacity: 1 }, ml: 1, mt: -0.5 }}
                                 >
-                                  <DeleteIcon fontSize="small" />
+                                  <OpenInNewIcon fontSize="small" />
                                 </IconButton>
                               </Box>
                               
@@ -175,14 +172,20 @@ function Jobs() {
                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, opacity: 0.4, '&:hover': { opacity: 1 } }}>
                                     <IconButton 
                                       size="small" 
-                                      onClick={() => moveJob(job.id, 'prev')} 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        moveJob(job.id, 'prev');
+                                      }} 
                                       disabled={stage.id === 'Wishlist'}
                                     >
                                       <ArrowBackIcon fontSize="small" />
                                     </IconButton>
                                     <IconButton 
                                       size="small" 
-                                      onClick={() => moveJob(job.id, 'next')}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        moveJob(job.id, 'next');
+                                      }}
                                       disabled={stage.id === 'Offer'}
                                     >
                                       <ArrowForwardIcon fontSize="small" />
@@ -203,15 +206,7 @@ function Jobs() {
         </Grid>
       </DragDropContext>
 
-      {/* Delete Confirmation Dialog */}
-      <ConfirmDialog
-        open={deleteDialog.open}
-        onClose={closeDeleteDialog}
-        onConfirm={handleDeleteConfirm}
-        title="Delete Job?"
-        message={`Are you sure you want to delete "${deleteDialog.job?.role}" at ${deleteDialog.job?.company}?`}
-        loading={deleting}
-      />
+      <AddJobModal open={addModalOpen} onClose={() => setAddModalOpen(false)} />
     </Box>
   );
 }

@@ -17,12 +17,13 @@ import { useJobContext } from '../store/JobContext';
 
 const BUCKET_OPTIONS = ['Recruiters', 'Hiring Managers', 'Former Colleagues'];
 
-function AddContactModal({ open, onClose, preselectedCompanyId = null }) {
+function AddContactModal({ open, onClose, preselectedCompanyId = null, preselectedJobId = null, onSuccess = null }) {
   const { addContact, companies } = useJobContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [form, setForm] = useState({
     companyId: '',
+    jobId: null,
     name: '',
     role: '',
     bucket: 'Recruiters',
@@ -34,10 +35,12 @@ function AddContactModal({ open, onClose, preselectedCompanyId = null }) {
   });
 
   useEffect(() => {
-    if (preselectedCompanyId) {
-      setForm(prev => ({ ...prev, companyId: preselectedCompanyId }));
-    }
-  }, [preselectedCompanyId]);
+    setForm(prev => ({
+      ...prev,
+      companyId: preselectedCompanyId || '',
+      jobId: preselectedJobId || null
+    }));
+  }, [preselectedCompanyId, preselectedJobId]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -58,6 +61,7 @@ function AddContactModal({ open, onClose, preselectedCompanyId = null }) {
       await addContact(form);
       setForm({
         companyId: preselectedCompanyId || '',
+        jobId: preselectedJobId || null,
         name: '',
         role: '',
         bucket: 'Recruiters',
@@ -67,6 +71,7 @@ function AddContactModal({ open, onClose, preselectedCompanyId = null }) {
         lastContact: '',
         notes: ''
       });
+      if (onSuccess) onSuccess();
       onClose();
     } catch (err) {
       setError(err.message);
@@ -78,6 +83,7 @@ function AddContactModal({ open, onClose, preselectedCompanyId = null }) {
   const handleClose = () => {
     setForm({
       companyId: preselectedCompanyId || '',
+      jobId: preselectedJobId || null,
       name: '',
       role: '',
       bucket: 'Recruiters',
