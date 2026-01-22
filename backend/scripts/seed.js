@@ -2,6 +2,89 @@ const db = require('../database');
 
 console.log('🌱 Seeding Database...');
 
+// 1. Initial Resume Data (Master Profile)
+const masterResume = {
+  name: "Jorge Cura",
+  tagline: "Senior Full Stack Engineer | Vue.js & .NET | AI & Context Engineering",
+  phone: "786-556-6018",
+  email: "curajorge21@gmail.com",
+  linkedin: "https://linkedin.com/in/jorgecura",
+  website: "",
+  summary: "Senior backend engineer with 7+ years of experience building high-reliability payment and telecom systems. I design and ship high-volume data processing services, resilient APIs, and secure integrations. Proven experience leading zero-downtime migrations and turning complex business rules into maintainable, observable services that process millions of transactions with high accuracy.",
+  portfolio: [
+    {
+      name: "MoreSpeakers.com",
+      url: "https://github.com/MoreSpeakers/morespeakers-com",
+      dates: "Nov 2025 - Dec 2025",
+      subtitle: "Open Source Contributor | .NET 10, ASP.NET Core, WebAuthn, AI Agents",
+      bullets: [
+        "Architected and implemented a security-first WebAuthn/FIDO2 passwordless authentication system from scratch.",
+        "Designed a multi-agent AI architecture to standardize engineering processes, codifying tribal knowledge.",
+        "Engineered a high-performance GitHub integration service with intelligent in-memory caching."
+      ]
+    }
+  ],
+  experience: [
+    {
+      title: "Senior Software Engineer",
+      company: "RT²",
+      dates: "Aug 2022 - Present",
+      location: "",
+      bullets: [
+        "Architected and built a secure, multi-tenant commission processing system adhering to PCI compliance standards for handling sensitive payment data.",
+        "Designed idempotent APIs with durable retry logic for financial transactions, ensuring data integrity.",
+        "Led a company-wide migration to Vue 3 for mission-critical apps with zero downtime."
+      ]
+    },
+    {
+      title: "Co-Founder / CTO",
+      company: "Farmer Titan",
+      dates: "2024 - 2025",
+      location: "",
+      bullets: [
+        "Defined cloud-first architecture for inventory and orders; implemented CI/CD, logging, and security baselines.",
+        "Led a small team to MVP with pragmatic APIs, clean data models, and cost-aware cloud choices."
+      ]
+    },
+    {
+      title: "Software Engineer II",
+      company: "InComm Payments",
+      dates: "Dec 2018 - Jan 2023",
+      location: "",
+      bullets: [
+        "Engineered and maintained high-volume payment APIs for enterprise retail partners.",
+        "Drove adoption of automated testing frameworks that increased unit test coverage by 40%."
+      ]
+    }
+  ],
+  projects: [
+    {
+      name: "Project Desk App",
+      dates: "",
+      subtitle: "Developer Productivity Tool",
+      bullets: [
+        "Architected a cross-platform desktop app (Tauri/Rust + Vue 3) to safely apply AI-generated code changes.",
+        "Built a high-performance Rust backend for secure local file system access."
+      ]
+    }
+  ],
+  core_skills: [
+    "Languages: C#, ASP.NET Core, .NET, T-SQL, TypeScript/JavaScript, Python",
+    "Backend: RESTful API Design, Microservices, Event-Driven Patterns, Idempotent Workflows",
+    "Data: SQL Server, PostgreSQL, MongoDB, Redis, Database Optimization",
+    "Cloud & DevOps: Azure, AWS, CI/CD Pipelines, Docker, GitHub Actions, Terraform (IaC)",
+    "Security & Compliance: HIPAA-aware Development, SOC 2, RBAC, Audit Logging, OAuth2, JWT",
+    "Frontend: Vue.js, Component-Based Architecture, Responsive Design, State Management"
+  ],
+  education: [
+    {
+      degree: "B.S., Computer Science",
+      school: "Florida International University, College of Engineering and Computing",
+      year: "2018"
+    }
+  ]
+};
+
 const companies = [
   { id: 'c1', name: 'Ezra', domain: 'HealthTech', website: 'ezra.com', description: 'AI-first early cancer detection.' },
   { id: 'c2', name: 'RT²', domain: 'Telecom', website: 'rt2.com', description: 'Commission processing systems.' },
@@ -151,8 +234,8 @@ const insertCompany = db.prepare(`
 `);
 
 const insertJob = db.prepare(`
-  INSERT INTO jobs (company_id, role, status, salary, next_action, date, description, notes) 
-  VALUES (:company_id, :role, :status, :salary, :next_action, :date, :description, :notes)
+  INSERT INTO jobs (company_id, role, status, salary, next_action, date, description, notes, resume_version_id) 
+  VALUES (:company_id, :role, :status, :salary, :next_action, :date, :description, :notes, :resume_version_id)
 `);
 
 const insertContact = db.prepare(`
@@ -165,23 +248,40 @@ const insertActivity = db.prepare(`
   VALUES (:job_id, :type, :date, :notes)
 `);
 
+const insertResume = db.prepare(`
+    INSERT INTO resume_versions (name, content, is_master)
+    VALUES (:name, :content, :is_master)
+`);
+
 const deleteAllCompanies = db.prepare('DELETE FROM companies');
 const deleteAllJobs = db.prepare('DELETE FROM jobs');
 const deleteAllContacts = db.prepare('DELETE FROM contacts');
 const deleteAllActivities = db.prepare('DELETE FROM job_activities');
+const deleteAllResumes = db.prepare('DELETE FROM resume_versions');
 
 // Clean start
 deleteAllActivities.run();
 deleteAllContacts.run();
 deleteAllJobs.run();
 deleteAllCompanies.run();
+deleteAllResumes.run();
 
 // Insert Companies
 for (const company of companies) {
   insertCompany.run(company);
 }
 
-// Insert Jobs
+// Insert Master Resume
+const resumeInfo = insertResume.run({ 
+    name: 'Master Profile', 
+    content: JSON.stringify(masterResume), 
+    is_master: 1 
+});
+const masterResumeId = Number(resumeInfo.lastInsertRowid);
+
+// Insert Jobs (Linking one to the master resume for demo)
+jobs[0].resume_version_id = masterResumeId;
+
 for (const job of jobs) {
   insertJob.run(job);
 }
@@ -196,4 +296,4 @@ for (const activity of jobActivities) {
   insertActivity.run(activity);
 }
 
-console.log(`✅ Seeded: ${companies.length} Companies, ${jobs.length} Jobs, ${contacts.length} Contacts, ${jobActivities.length} Activities.`);
+console.log(`✅ Seeded: ${companies.length} Companies, ${jobs.length} Jobs, 1 Resume, ${contacts.length} Contacts.`);

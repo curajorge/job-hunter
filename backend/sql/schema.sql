@@ -11,26 +11,37 @@ CREATE TABLE IF NOT EXISTS companies (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Resume Versions Table (History)
+CREATE TABLE IF NOT EXISTS resume_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL, -- e.g., "Master Profile", "Google Tailored"
+    content TEXT NOT NULL, -- JSON string of the resume data
+    is_master BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Jobs Table
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id TEXT,
     role TEXT NOT NULL,
-    status TEXT NOT NULL, -- Applied, Interviewing, Offer, Wishlist
+    status TEXT NOT NULL,
     salary TEXT,
     next_action TEXT,
     date TEXT,
-    description TEXT, -- Full job description / JD
-    notes TEXT, -- Freeform notes/impressions
+    description TEXT,
+    notes TEXT,
+    resume_version_id INTEGER, -- Link to specific resume version used
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL
+    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL,
+    FOREIGN KEY (resume_version_id) REFERENCES resume_versions(id) ON DELETE SET NULL
 );
 
 -- Job Activities Table (Timeline)
 CREATE TABLE IF NOT EXISTS job_activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL,
-    type TEXT NOT NULL, -- Applied, Phone Screen, Technical, etc.
+    type TEXT NOT NULL,
     date TEXT NOT NULL,
     notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -41,10 +52,10 @@ CREATE TABLE IF NOT EXISTS job_activities (
 CREATE TABLE IF NOT EXISTS contacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id TEXT,
-    job_id INTEGER, -- Optional: link contact to specific job
+    job_id INTEGER,
     name TEXT NOT NULL,
     role TEXT,
-    bucket TEXT, -- Recruiters, Hiring Managers, Former Colleagues
+    bucket TEXT,
     email TEXT,
     linkedin_url TEXT,
     phone TEXT,

@@ -12,48 +12,13 @@ export const JobProvider = ({ children }) => {
   const [companies, setCompanies] = useState([]);
   const [jobs, setJobsState] = useState([]);
   const [people, setPeople] = useState([]);
-
-  const [masterProfile] = useState({
-    name: "Jorge Cura",
-    summary: "Senior backend engineer with 7+ years building high-reliability APIs and data-driven services in C#/.NET. Depth in API design, idempotent workflows, and cloud-native systems on AWS and Azure.",
-    skills: ["C#", ".NET 9", "Vue 3", "AWS", "System Design", "PostgreSQL", "Redis", "Docker"],
-    experience: [
-      { 
-        id: 'exp1', 
-        company: 'RT²', 
-        title: 'Senior Software Engineer', 
-        bullets: [
-          'Architected carrier commission processing systems supporting instant payments, residuals, and promotions across multiple carriers.',
-          'Designed idempotent APIs with durable retry logic for financial transactions, ensuring zero duplicate records across millions of transactions.',
-          'Built a secure virtual wallet integrated with Authorize.net for dealer transactions and comprehensive transaction management.',
-          'Led migration to Vue 3 for mission-critical apps with zero downtime and improved UX and performance.'
-        ] 
-      },
-      { 
-        id: 'exp2', 
-        company: 'Farmer Titan', 
-        title: 'Co-Founder / CTO', 
-        bullets: [
-          'Defined cloud-first architecture for inventory and orders; implemented CI/CD, logging, and security baselines.',
-          'Led a small team to MVP with pragmatic APIs, clean data models, and cost-aware cloud choices.'
-        ] 
-      },
-      { 
-        id: 'exp3', 
-        company: 'InComm Payments', 
-        title: 'Software Engineer II', 
-        bullets: [
-          'Built and maintained enterprise payment platforms and APIs using C#/.NET and SQL for high-volume programs.',
-          'Improved developer tooling, code reviews, and test automation to raise quality and velocity.'
-        ] 
-      }
-    ]
-  });
+  const [resumes, setResumes] = useState([]);
 
   const normalizeJob = useCallback((job) => ({
     ...job,
     nextAction: job.next_action ?? job.nextAction,
-    companyId: job.company_id ?? job.companyId
+    companyId: job.company_id ?? job.companyId,
+    resumeVersionId: job.resume_version_id ?? job.resumeVersionId
   }), []);
 
   const normalizeContact = useCallback((contact) => ({
@@ -76,6 +41,7 @@ export const JobProvider = ({ children }) => {
         setCompanies(data.companies || []);
         setJobsState((data.jobs || []).map(normalizeJob));
         setPeople((data.contacts || []).map(normalizeContact));
+        setResumes(data.resumes || []);
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
         setError(err.message);
@@ -187,7 +153,8 @@ export const JobProvider = ({ children }) => {
           next_action: job.nextAction,
           date: job.date,
           description: job.description,
-          notes: job.notes
+          notes: job.notes,
+          resume_version_id: job.resumeVersionId
         })
       });
       if (!response.ok) {
@@ -217,7 +184,8 @@ export const JobProvider = ({ children }) => {
           next_action: updates.nextAction,
           date: updates.date,
           description: updates.description,
-          notes: updates.notes
+          notes: updates.notes,
+          resume_version_id: updates.resumeVersionId
         })
       });
       if (!response.ok) {
@@ -447,6 +415,54 @@ export const JobProvider = ({ children }) => {
   };
 
   // ===================
+  // RESUME ACTIONS
+  // ===================
+
+  const fetchResume = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE}/resumes/${id}`);
+      if (!response.ok) throw new Error('Failed to fetch resume');
+      return await response.json();
+    } catch (err) {
+      console.error('Error fetching resume:', err);
+      throw err;
+    }
+  };
+
+  const createResume = async (name, content, isMaster = false) => {
+    try {
+      const response = await fetch(`${API_BASE}/resumes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content, is_master: isMaster })
+      });
+      if (!response.ok) throw new Error('Failed to create resume');
+      const newResume = await response.json();
+      setResumes(prev => [newResume, ...prev]);
+      return newResume;
+    } catch (err) {
+      console.error('Error creating resume:', err);
+      throw err;
+    }
+  };
+
+  const updateResume = async (id, name, content) => {
+    try {
+      const response = await fetch(`${API_BASE}/resumes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content })
+      });
+      if (!response.ok) throw new Error('Failed to update resume');
+      // Update local state if needed (mainly for name changes)
+      setResumes(prev => prev.map(r => r.id === id ? { ...r, name } : r));
+    } catch (err) {
+      console.error('Error updating resume:', err);
+      throw err;
+    }
+  };
+
+  // ===================
   // SELECTORS
   // ===================
 
@@ -485,7 +501,7 @@ export const JobProvider = ({ children }) => {
     companies,
     jobs: enrichedJobs,
     contacts: enrichedContacts,
-    masterProfile,
+    resumes,
     
     // Company Actions
     addCompany,
@@ -509,6 +525,11 @@ export const JobProvider = ({ children }) => {
     updateContact,
     touchContact,
     deleteContact,
+
+    // Resume Actions
+    fetchResume,
+    createResume,
+    updateResume,
     
     // Selectors
     getCompanyDeepView,

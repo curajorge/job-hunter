@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.use((req, res, next) => {
   res.header('Content-Type', 'application/json; charset=utf-8');
@@ -22,6 +22,7 @@ app.get('/api/dashboard', (req, res, next) => {
     const companies = db.prepare('SELECT * FROM companies').all();
     const jobs = db.prepare('SELECT * FROM jobs').all();
     const contacts = db.prepare('SELECT * FROM contacts').all();
+    const resumes = db.prepare('SELECT id, name, is_master, created_at FROM resume_versions ORDER BY created_at DESC').all();
 
     const enrich = (items) => items.map(item => {
       const comp = companies.find(c => c.id === item.company_id);
@@ -31,7 +32,8 @@ app.get('/api/dashboard', (req, res, next) => {
     res.json({
       companies,
       jobs: enrich(jobs),
-      contacts: enrich(contacts)
+      contacts: enrich(contacts),
+      resumes
     });
   } catch (err) {
     next(err);
@@ -39,7 +41,78 @@ app.get('/api/dashboard', (req, res, next) => {
 });
 
 // ===================
-// 2. COMPANIES CRUD
+// 2. RESUMES CRUD
+// ===================
+
+app.get('/api/resumes', (req, res, next) => {
+  try {
+    // Return metadata only for list to save bandwidth
+    const rows = db.prepare('SELECT id, name, is_master, created_at FROM resume_versions ORDER BY created_at DESC').all();
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/resumes/:id', (req, res, next) => {
+  try {
+    const resume = db.prepare('SELECT * FROM resume_versions WHERE id = ?').get(req.params.id);
+    if (!resume) return res.status(404).json({ error: 'Resume not found' });
+    // Parse content if it's stored as string
+    try {
+        resume.content = JSON.parse(resume.content);
+    } catch (e) {
+        // content might already be object if handled upstream, but sqlite stores text
+    }
+    res.json(resume);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/resumes', (req, res, next) => {
+  try {
+    const { name, content, is_master } = req.body;
+    
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    
+    const stmt = db.prepare(
+      'INSERT INTO resume_versions (name, content, is_master) VALUES (?, ?, ?)'
+    );
+    const info = stmt.run(name, JSON.stringify(content), is_master ? 1 : 0);
+    
+    res.status(201).json({ id: Number(info.lastInsertRowid), name, is_master });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/resumes/:id', (req, res, next) => {
+  try {
+    const { name, content } = req.body;
+    const stmt = db.prepare('UPDATE resume_versions SET name = ?, content = ? WHERE id = ?');
+    const info = stmt.run(name, JSON.stringify(content), req.params.id);
+    
+    if (info.changes === 0) return res.status(404).json({ error: 'Resume not found' });
+    res.json({ success: true, id: req.params.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/resumes/:id', (req, res, next) => {
+  try {
+    const stmt = db.prepare('DELETE FROM resume_versions WHERE id = ?');
+    const info = stmt.run(req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Resume not found' });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ===================
+// 3. COMPANIES CRUD
 // ===================
 
 app.get('/api/companies', (req, res, next) => {
@@ -125,7 +198,7 @@ app.delete('/api/companies/:id', (req, res, next) => {
 });
 
 // ===================
-// 3. JOBS CRUD
+// 4. JOBS CRUD
 // ===================
 
 app.get('/api/jobs', (req, res, next) => {
@@ -147,6 +220,12 @@ app.get('/api/jobs/:id', (req, res, next) => {
       ? db.prepare('SELECT * FROM companies WHERE id = ?').get(job.company_id)
       : null;
     
+    // Get resume version if linked
+    let resumeVersion = null;
+    if (job.resume_version_id) {
+        resumeVersion = db.prepare('SELECT id, name FROM resume_versions WHERE id = ?').get(job.resume_version_id);
+    }
+
     // Get activities for this job
     const activities = db.prepare(
       'SELECT * FROM job_activities WHERE job_id = ? ORDER BY date DESC, created_at DESC'
@@ -161,6 +240,7 @@ app.get('/api/jobs/:id', (req, res, next) => {
       ...job, 
       company: company ? company.name : 'Unknown',
       companyData: company,
+      resumeVersion,
       activities,
       contacts
     });
@@ -171,14 +251,14 @@ app.get('/api/jobs/:id', (req, res, next) => {
 
 app.post('/api/jobs', (req, res, next) => {
   try {
-    const { company_id, role, status, salary, next_action, date, description, notes } = req.body;
+    const { company_id, role, status, salary, next_action, date, description, notes, resume_version_id } = req.body;
     
     if (!role || !role.trim()) {
       return res.status(400).json({ error: 'Job role is required' });
     }
     
     const stmt = db.prepare(
-      'INSERT INTO jobs (company_id, role, status, salary, next_action, date, description, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO jobs (company_id, role, status, salary, next_action, date, description, notes, resume_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const info = stmt.run(
       company_id || null,
@@ -188,7 +268,8 @@ app.post('/api/jobs', (req, res, next) => {
       next_action || null,
       date || null,
       description || null,
-      notes || null
+      notes || null,
+      resume_version_id || null
     );
     
     res.status(201).json({
@@ -200,7 +281,8 @@ app.post('/api/jobs', (req, res, next) => {
       next_action,
       date,
       description,
-      notes
+      notes,
+      resume_version_id
     });
   } catch (err) {
     next(err);
@@ -209,14 +291,14 @@ app.post('/api/jobs', (req, res, next) => {
 
 app.put('/api/jobs/:id', (req, res, next) => {
   try {
-    const { company_id, role, status, salary, next_action, date, description, notes } = req.body;
+    const { company_id, role, status, salary, next_action, date, description, notes, resume_version_id } = req.body;
     
     if (!role || !role.trim()) {
       return res.status(400).json({ error: 'Job role is required' });
     }
     
     const stmt = db.prepare(
-      'UPDATE jobs SET company_id = ?, role = ?, status = ?, salary = ?, next_action = ?, date = ?, description = ?, notes = ? WHERE id = ?'
+      'UPDATE jobs SET company_id = ?, role = ?, status = ?, salary = ?, next_action = ?, date = ?, description = ?, notes = ?, resume_version_id = ? WHERE id = ?'
     );
     const info = stmt.run(
       company_id || null,
@@ -227,6 +309,7 @@ app.put('/api/jobs/:id', (req, res, next) => {
       date || null,
       description || null,
       notes || null,
+      resume_version_id || null,
       req.params.id
     );
     
@@ -243,7 +326,8 @@ app.put('/api/jobs/:id', (req, res, next) => {
       next_action,
       date,
       description,
-      notes
+      notes,
+      resume_version_id
     });
   } catch (err) {
     next(err);
@@ -279,7 +363,7 @@ app.delete('/api/jobs/:id', (req, res, next) => {
 });
 
 // ===================
-// 4. JOB ACTIVITIES
+// 5. JOB ACTIVITIES
 // ===================
 
 app.get('/api/jobs/:jobId/activities', (req, res, next) => {
@@ -342,7 +426,7 @@ app.delete('/api/activities/:id', (req, res, next) => {
 });
 
 // ===================
-// 5. CONTACTS CRUD
+// 6. CONTACTS CRUD
 // ===================
 
 app.get('/api/contacts', (req, res, next) => {
