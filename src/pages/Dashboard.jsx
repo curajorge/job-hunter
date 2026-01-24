@@ -77,7 +77,7 @@ function Dashboard() {
 
   return (
     <Box sx={{ p: 0, pb: 8 }}>
-      <Typography variant="h5" sx={{ mb: 3, fontWeight: 700 }}>Good Morning, Jorge</Typography>
+      <Typography variant="h5" sx={{ mb: 3, fontWeight: 700 }}>Job Hunter Dashboard</Typography>
       
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {/* Row 1: Goals & Momentum */}

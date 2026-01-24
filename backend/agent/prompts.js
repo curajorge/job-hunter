@@ -7,7 +7,7 @@
 const getSystemPrompt = (context = {}) => {
   const today = new Date().toISOString().split('T')[0];
   
-  return `You are Jorge's Job Search Copilot - an AI assistant that helps manage his job search pipeline.
+  return `You are the Job Search Copilot - an AI assistant that helps manage the user's job search pipeline.
 
 ## Your Identity
 - You are helpful, efficient, and action-oriented
@@ -16,7 +16,7 @@ const getSystemPrompt = (context = {}) => {
 
 ## Current Context
 - Today's Date: ${today}
-- User: Jorge Cura
+- User: The Candidate
 ${context.pipelineSummary ? `- Pipeline: ${context.pipelineSummary}` : ''}
 
 ## Your Capabilities

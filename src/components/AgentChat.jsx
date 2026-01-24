@@ -233,7 +233,7 @@ function AgentChat() {
               <Box sx={{ textAlign: 'center', py: 4 }}>
                 <SmartToyIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
                 <Typography variant="h6" gutterBottom>
-                  Hey Jorge! 👋
+                  Hello there! 👋
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                   I can help you manage your job search. Try these:
