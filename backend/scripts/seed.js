@@ -226,6 +226,50 @@ const jobActivities = [
   { job_id: 3, type: 'Recruiter Screen', date: daysAgo(2), notes: 'Quick call with Sarah. Moving to technical phone screen.' },
 ];
 
+// Engagement seed data
+const engagementThreads = [
+  {
+    contact_id: 2, // Alex Stiglick
+    type: 'post_comment',
+    source_url: 'https://linkedin.com/posts/alexstiglick-ai-healthcare-123',
+    source_title: 'His post on AI in early cancer detection',
+    status: 'replied',
+    started_at: daysAgo(5)
+  },
+  {
+    contact_id: 4, // Sarah Kim
+    type: 'dm',
+    source_url: null,
+    source_title: null,
+    status: 'active',
+    started_at: daysAgo(10)
+  },
+  {
+    contact_id: 5, // David Park
+    type: 'connection_request',
+    source_url: null,
+    source_title: null,
+    status: 'converted',
+    started_at: daysAgo(30)
+  }
+];
+
+const engagementMessages = [
+  // Thread 1: Alex Stiglick post comment
+  { thread_id: 1, direction: 'outbound', content: 'Great insights on AI adoption in healthcare. The point about data privacy resonated with my experience at RT². We faced similar challenges implementing HIPAA-compliant data pipelines.', date: daysAgo(5) },
+  { thread_id: 1, direction: 'inbound', content: 'Thanks Jorge! Would love to hear more about your experience. Are you open to chatting sometime?', date: daysAgo(4) },
+  { thread_id: 1, direction: 'outbound', content: 'Absolutely! I\'ll send you a calendar link.', date: daysAgo(4) },
+  
+  // Thread 2: Sarah Kim DM
+  { thread_id: 2, direction: 'outbound', content: 'Hi Sarah, excited about the Staff Engineer role. Happy to chat whenever works for your schedule.', date: daysAgo(10) },
+  
+  // Thread 3: David Park connection
+  { thread_id: 3, direction: 'outbound', content: 'Hey David! Long time no see. Hope you\'re doing well at Netflix. Would love to catch up sometime.', date: daysAgo(30) },
+  { thread_id: 3, direction: 'inbound', content: 'Jorge! Great to hear from you. Things are going great here. Let\'s definitely grab coffee!', date: daysAgo(28) },
+  { thread_id: 3, direction: 'outbound', content: 'Sounds good! I\'m actually exploring new opportunities. Would love to hear about life at Netflix.', date: daysAgo(27) },
+  { thread_id: 3, direction: 'inbound', content: 'Happy to help! I can refer you if you\'re interested. Let me know what roles you\'re looking at.', date: daysAgo(25) }
+];
+
 // --- EXECUTION ---
 
 const insertCompany = db.prepare(`
@@ -253,13 +297,27 @@ const insertResume = db.prepare(`
     VALUES (:name, :content, :is_master)
 `);
 
+const insertEngagementThread = db.prepare(`
+  INSERT INTO engagement_threads (contact_id, type, source_url, source_title, status, started_at)
+  VALUES (:contact_id, :type, :source_url, :source_title, :status, :started_at)
+`);
+
+const insertEngagementMessage = db.prepare(`
+  INSERT INTO engagement_messages (thread_id, direction, content, date)
+  VALUES (:thread_id, :direction, :content, :date)
+`);
+
 const deleteAllCompanies = db.prepare('DELETE FROM companies');
 const deleteAllJobs = db.prepare('DELETE FROM jobs');
 const deleteAllContacts = db.prepare('DELETE FROM contacts');
 const deleteAllActivities = db.prepare('DELETE FROM job_activities');
 const deleteAllResumes = db.prepare('DELETE FROM resume_versions');
+const deleteAllEngagementMessages = db.prepare('DELETE FROM engagement_messages');
+const deleteAllEngagementThreads = db.prepare('DELETE FROM engagement_threads');
 
-// Clean start
+// Clean start (order matters due to FKs)
+deleteAllEngagementMessages.run();
+deleteAllEngagementThreads.run();
 deleteAllActivities.run();
 deleteAllContacts.run();
 deleteAllJobs.run();
@@ -296,4 +354,14 @@ for (const activity of jobActivities) {
   insertActivity.run(activity);
 }
 
-console.log(`✅ Seeded: ${companies.length} Companies, ${jobs.length} Jobs, 1 Resume, ${contacts.length} Contacts.`);
+// Insert Engagement Threads
+for (const thread of engagementThreads) {
+  insertEngagementThread.run(thread);
+}
+
+// Insert Engagement Messages
+for (const message of engagementMessages) {
+  insertEngagementMessage.run(message);
+}
+
+console.log(`✅ Seeded: ${companies.length} Companies, ${jobs.length} Jobs, 1 Resume, ${contacts.length} Contacts, ${engagementThreads.length} Engagement Threads, ${engagementMessages.length} Messages.`);

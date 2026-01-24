@@ -3,6 +3,21 @@ const cors = require('cors');
 const crypto = require('crypto');
 const db = require('./database');
 
+// Agent imports (lazy loaded to handle missing deps gracefully)
+let agent = null;
+function getAgent() {
+  if (!agent) {
+    try {
+      agent = require('./agent');
+    } catch (err) {
+      console.warn('⚠️ Agent module not available:', err.message);
+      console.warn('Run "npm install" in backend to install agent dependencies.');
+      return null;
+    }
+  }
+  return agent;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -13,6 +28,9 @@ app.use((req, res, next) => {
   res.header('Content-Type', 'application/json; charset=utf-8');
   next();
 });
+
+// In-memory session store for agent conversations
+const agentSessions = new Map();
 
 // --- API ENDPOINTS ---
 
@@ -38,6 +56,121 @@ app.get('/api/dashboard', (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ===================
+// AGENT ENDPOINTS
+// ===================
+
+// POST /api/agent/chat - Main chat endpoint
+app.post('/api/agent/chat', async (req, res, next) => {
+  try {
+    const agentModule = getAgent();
+    if (!agentModule) {
+      return res.status(503).json({
+        error: 'Agent service unavailable',
+        message: 'LLM dependencies not installed. Run "npm install" in backend directory.'
+      });
+    }
+
+    const { message, sessionId, context } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // Get or create session
+    const sid = sessionId || crypto.randomUUID();
+    let history = agentSessions.get(sid) || [];
+
+    // Build context from current state
+    const enrichedContext = {
+      ...context,
+      pipelineSummary: null,
+    };
+
+    // Quick pipeline summary for context
+    try {
+      const jobs = db.prepare('SELECT status, COUNT(*) as count FROM jobs GROUP BY status').all();
+      enrichedContext.pipelineSummary = jobs.map(j => `${j.status}: ${j.count}`).join(', ');
+    } catch (e) {
+      // Ignore - optional context
+    }
+
+    // Process through agent
+    const result = await agentModule.chat(message, history, enrichedContext);
+
+    // Update session
+    agentSessions.set(sid, result.history);
+
+    // Cleanup old sessions (simple LRU-ish)
+    if (agentSessions.size > 100) {
+      const firstKey = agentSessions.keys().next().value;
+      agentSessions.delete(firstKey);
+    }
+
+    res.json({
+      response: result.response,
+      sessionId: sid,
+    });
+  } catch (err) {
+    console.error('Agent chat error:', err);
+    res.status(500).json({
+      error: 'Agent processing failed',
+      message: err.message,
+    });
+  }
+});
+
+// POST /api/agent/parse - Parse unstructured text
+app.post('/api/agent/parse', async (req, res, next) => {
+  try {
+    const agentModule = getAgent();
+    if (!agentModule) {
+      return res.status(503).json({
+        error: 'Agent service unavailable',
+        message: 'LLM dependencies not installed.'
+      });
+    }
+
+    const { text, type } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    const parsed = await agentModule.parseText(text, type || 'job');
+    res.json(parsed);
+  } catch (err) {
+    console.error('Agent parse error:', err);
+    res.status(500).json({
+      error: 'Parsing failed',
+      message: err.message,
+    });
+  }
+});
+
+// GET /api/agent/info - Get agent provider info
+app.get('/api/agent/info', (req, res) => {
+  const agentModule = getAgent();
+  if (!agentModule) {
+    return res.status(503).json({
+      available: false,
+      error: 'Agent service unavailable',
+    });
+  }
+
+  res.json({
+    available: true,
+    ...agentModule.getProviderInfo(),
+  });
+});
+
+// DELETE /api/agent/session/:sessionId - Clear a session
+app.delete('/api/agent/session/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  agentSessions.delete(sessionId);
+  res.json({ success: true });
 });
 
 // ===================
@@ -203,8 +336,16 @@ app.delete('/api/companies/:id', (req, res, next) => {
 
 app.get('/api/jobs', (req, res, next) => {
   try {
+    const companies = db.prepare('SELECT * FROM companies').all();
     const rows = db.prepare('SELECT * FROM jobs').all();
-    res.json(rows);
+    
+    // Enrich with company name
+    const enriched = rows.map(job => {
+      const comp = companies.find(c => c.id === job.company_id);
+      return { ...job, company: comp ? comp.name : 'Unknown' };
+    });
+    
+    res.json(enriched);
   } catch (err) {
     next(err);
   }
@@ -431,8 +572,16 @@ app.delete('/api/activities/:id', (req, res, next) => {
 
 app.get('/api/contacts', (req, res, next) => {
   try {
+    const companies = db.prepare('SELECT * FROM companies').all();
     const rows = db.prepare('SELECT * FROM contacts').all();
-    res.json(rows);
+    
+    // Enrich with company name
+    const enriched = rows.map(contact => {
+      const comp = companies.find(c => c.id === contact.company_id);
+      return { ...contact, company: comp ? comp.name : 'Unknown' };
+    });
+    
+    res.json(enriched);
   } catch (err) {
     next(err);
   }
@@ -568,6 +717,234 @@ app.delete('/api/contacts/:id', (req, res, next) => {
   }
 });
 
+// ===================
+// 7. ENGAGEMENTS
+// ===================
+
+// GET - List engagement threads for a contact (with message count)
+app.get('/api/contacts/:contactId/engagements', (req, res, next) => {
+  try {
+    const threads = db.prepare(`
+      SELECT 
+        et.*,
+        COUNT(em.id) as message_count,
+        (
+          SELECT content FROM engagement_messages 
+          WHERE thread_id = et.id AND direction = 'outbound' 
+          ORDER BY date ASC, created_at ASC LIMIT 1
+        ) as first_outbound_message
+      FROM engagement_threads et
+      LEFT JOIN engagement_messages em ON em.thread_id = et.id
+      WHERE et.contact_id = ?
+      GROUP BY et.id
+      ORDER BY et.started_at DESC, et.created_at DESC
+    `).all(req.params.contactId);
+    
+    res.json(threads);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST - Create engagement thread + first message
+app.post('/api/contacts/:contactId/engagements', (req, res, next) => {
+  try {
+    const { type, source_url, source_title, started_at, first_message } = req.body;
+    
+    if (!type) {
+      return res.status(400).json({ error: 'Engagement type is required' });
+    }
+    if (!['post_comment', 'dm', 'connection_request'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid engagement type' });
+    }
+    if (!started_at) {
+      return res.status(400).json({ error: 'Start date is required' });
+    }
+    if (!first_message || !first_message.content) {
+      return res.status(400).json({ error: 'First message content is required' });
+    }
+    
+    // Verify contact exists
+    const contact = db.prepare('SELECT id FROM contacts WHERE id = ?').get(req.params.contactId);
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+    
+    // Insert thread
+    const threadStmt = db.prepare(`
+      INSERT INTO engagement_threads (contact_id, type, source_url, source_title, started_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const threadInfo = threadStmt.run(
+      req.params.contactId,
+      type,
+      source_url || null,
+      source_title || null,
+      started_at
+    );
+    const threadId = Number(threadInfo.lastInsertRowid);
+    
+    // Insert first message
+    const msgStmt = db.prepare(`
+      INSERT INTO engagement_messages (thread_id, direction, content, date)
+      VALUES (?, ?, ?, ?)
+    `);
+    const msgInfo = msgStmt.run(
+      threadId,
+      first_message.direction || 'outbound',
+      first_message.content,
+      first_message.date || started_at
+    );
+    
+    res.status(201).json({
+      id: threadId,
+      contact_id: parseInt(req.params.contactId),
+      type,
+      source_url,
+      source_title,
+      status: 'active',
+      started_at,
+      first_message: {
+        id: Number(msgInfo.lastInsertRowid),
+        direction: first_message.direction || 'outbound',
+        content: first_message.content,
+        date: first_message.date || started_at
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET - Get single engagement thread with all messages
+app.get('/api/engagements/:id', (req, res, next) => {
+  try {
+    const thread = db.prepare('SELECT * FROM engagement_threads WHERE id = ?').get(req.params.id);
+    if (!thread) {
+      return res.status(404).json({ error: 'Engagement thread not found' });
+    }
+    
+    const messages = db.prepare(`
+      SELECT * FROM engagement_messages 
+      WHERE thread_id = ? 
+      ORDER BY date ASC, created_at ASC
+    `).all(req.params.id);
+    
+    res.json({ ...thread, messages });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT - Update engagement thread metadata (status, title)
+app.put('/api/engagements/:id', (req, res, next) => {
+  try {
+    const { status, source_title, source_url } = req.body;
+    
+    if (status && !['active', 'pending', 'no_reply', 'replied', 'converted'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    
+    const existing = db.prepare('SELECT * FROM engagement_threads WHERE id = ?').get(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Engagement thread not found' });
+    }
+    
+    const stmt = db.prepare(`
+      UPDATE engagement_threads 
+      SET status = ?, source_title = ?, source_url = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      status || existing.status,
+      source_title !== undefined ? source_title : existing.source_title,
+      source_url !== undefined ? source_url : existing.source_url,
+      req.params.id
+    );
+    
+    const updated = db.prepare('SELECT * FROM engagement_threads WHERE id = ?').get(req.params.id);
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE - Delete engagement thread (cascades to messages)
+app.delete('/api/engagements/:id', (req, res, next) => {
+  try {
+    const stmt = db.prepare('DELETE FROM engagement_threads WHERE id = ?');
+    const info = stmt.run(req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Engagement thread not found' });
+    }
+    
+    res.json({ success: true, id: parseInt(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST - Add message to existing thread
+app.post('/api/engagements/:threadId/messages', (req, res, next) => {
+  try {
+    const { direction, content, date } = req.body;
+    
+    if (!direction || !['outbound', 'inbound'].includes(direction)) {
+      return res.status(400).json({ error: 'Valid direction (outbound/inbound) is required' });
+    }
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Message content is required' });
+    }
+    if (!date) {
+      return res.status(400).json({ error: 'Message date is required' });
+    }
+    
+    // Verify thread exists
+    const thread = db.prepare('SELECT id, status FROM engagement_threads WHERE id = ?').get(req.params.threadId);
+    if (!thread) {
+      return res.status(404).json({ error: 'Engagement thread not found' });
+    }
+    
+    const stmt = db.prepare(`
+      INSERT INTO engagement_messages (thread_id, direction, content, date)
+      VALUES (?, ?, ?, ?)
+    `);
+    const info = stmt.run(req.params.threadId, direction, content.trim(), date);
+    
+    // Auto-update thread status if inbound message received
+    if (direction === 'inbound' && thread.status !== 'converted') {
+      db.prepare('UPDATE engagement_threads SET status = ? WHERE id = ?').run('replied', req.params.threadId);
+    }
+    
+    res.status(201).json({
+      id: Number(info.lastInsertRowid),
+      thread_id: parseInt(req.params.threadId),
+      direction,
+      content: content.trim(),
+      date
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE - Delete single message
+app.delete('/api/messages/:id', (req, res, next) => {
+  try {
+    const stmt = db.prepare('DELETE FROM engagement_messages WHERE id = ?');
+    const info = stmt.run(req.params.id);
+    
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    res.json({ success: true, id: parseInt(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
   console.error('🔥 Server Error:', err.stack);
@@ -582,4 +959,13 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT} (Node v${process.version})`);
+  
+  // Check if agent is available
+  const agentModule = getAgent();
+  if (agentModule) {
+    const info = agentModule.getProviderInfo();
+    console.log(`🤖 Agent ready: ${info.name} (${info.model})`);
+  } else {
+    console.log('⚠️ Agent not available - install dependencies with: cd backend && npm install');
+  }
 });

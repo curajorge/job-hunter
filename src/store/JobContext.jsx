@@ -29,6 +29,21 @@ export const JobProvider = ({ children }) => {
     linkedinUrl: contact.linkedin_url ?? contact.linkedinUrl
   }), []);
 
+  const normalizeEngagementThread = useCallback((thread) => ({
+    ...thread,
+    contactId: thread.contact_id ?? thread.contactId,
+    sourceUrl: thread.source_url ?? thread.sourceUrl,
+    sourceTitle: thread.source_title ?? thread.sourceTitle,
+    startedAt: thread.started_at ?? thread.startedAt,
+    messageCount: thread.message_count ?? thread.messageCount,
+    firstOutboundMessage: thread.first_outbound_message ?? thread.firstOutboundMessage
+  }), []);
+
+  const normalizeEngagementMessage = useCallback((message) => ({
+    ...message,
+    threadId: message.thread_id ?? message.threadId
+  }), []);
+
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
@@ -238,6 +253,13 @@ export const JobProvider = ({ children }) => {
     }
   };
 
+  const clearJobAction = async (id) => {
+      const job = jobs.find(j => j.id === id);
+      if (job) {
+          await updateJob(id, { ...job, nextAction: '' });
+      }
+  };
+
   const moveJob = (id, direction) => {
     const stages = ['Wishlist', 'Applied', 'Interviewing', 'Offer'];
     const job = jobs.find(j => j.id === id);
@@ -415,6 +437,148 @@ export const JobProvider = ({ children }) => {
   };
 
   // ===================
+  // ENGAGEMENT ACTIONS
+  // ===================
+
+  const fetchContactEngagements = async (contactId) => {
+    try {
+      const response = await fetch(`${API_BASE}/contacts/${contactId}/engagements`);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to fetch engagements');
+      }
+      const data = await response.json();
+      return data.map(normalizeEngagementThread);
+    } catch (err) {
+      console.error('Error fetching engagements:', err);
+      throw err;
+    }
+  };
+
+  const createEngagement = async (contactId, engagementData) => {
+    try {
+      const response = await fetch(`${API_BASE}/contacts/${contactId}/engagements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: engagementData.type,
+          source_url: engagementData.sourceUrl,
+          source_title: engagementData.sourceTitle,
+          started_at: engagementData.startedAt,
+          first_message: {
+            direction: engagementData.firstMessage.direction || 'outbound',
+            content: engagementData.firstMessage.content,
+            date: engagementData.firstMessage.date || engagementData.startedAt
+          }
+        })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to create engagement');
+      }
+      const data = await response.json();
+      return normalizeEngagementThread(data);
+    } catch (err) {
+      console.error('Error creating engagement:', err);
+      throw err;
+    }
+  };
+
+  const fetchEngagementDetail = async (threadId) => {
+    try {
+      const response = await fetch(`${API_BASE}/engagements/${threadId}`);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to fetch engagement detail');
+      }
+      const data = await response.json();
+      return {
+        ...normalizeEngagementThread(data),
+        messages: (data.messages || []).map(normalizeEngagementMessage)
+      };
+    } catch (err) {
+      console.error('Error fetching engagement detail:', err);
+      throw err;
+    }
+  };
+
+  const updateEngagement = async (threadId, updates) => {
+    try {
+      const response = await fetch(`${API_BASE}/engagements/${threadId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: updates.status,
+          source_title: updates.sourceTitle,
+          source_url: updates.sourceUrl
+        })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to update engagement');
+      }
+      const data = await response.json();
+      return normalizeEngagementThread(data);
+    } catch (err) {
+      console.error('Error updating engagement:', err);
+      throw err;
+    }
+  };
+
+  const deleteEngagement = async (threadId) => {
+    try {
+      const response = await fetch(`${API_BASE}/engagements/${threadId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to delete engagement');
+      }
+    } catch (err) {
+      console.error('Error deleting engagement:', err);
+      throw err;
+    }
+  };
+
+  const addEngagementMessage = async (threadId, messageData) => {
+    try {
+      const response = await fetch(`${API_BASE}/engagements/${threadId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          direction: messageData.direction,
+          content: messageData.content,
+          date: messageData.date
+        })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to add message');
+      }
+      const data = await response.json();
+      return normalizeEngagementMessage(data);
+    } catch (err) {
+      console.error('Error adding engagement message:', err);
+      throw err;
+    }
+  };
+
+  const deleteEngagementMessage = async (messageId) => {
+    try {
+      const response = await fetch(`${API_BASE}/messages/${messageId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to delete message');
+      }
+    } catch (err) {
+      console.error('Error deleting engagement message:', err);
+      throw err;
+    }
+  };
+
+  // ===================
   // RESUME ACTIONS
   // ===================
 
@@ -476,7 +640,7 @@ export const JobProvider = ({ children }) => {
     return { ...company, jobs: companyJobs, people: companyPeople };
   };
 
-  const getStaleContacts = useCallback((daysThreshold = 7) => {
+  const getStaleContacts = useCallback((daysThreshold = 14) => {
     const today = new Date();
     return enrichedContacts.filter(c => {
       if (!c.lastContact) return true;
@@ -494,6 +658,36 @@ export const JobProvider = ({ children }) => {
     const today = new Date().toISOString().split('T')[0];
     return enrichedContacts.filter(c => c.lastContact === today).length;
   }, [enrichedContacts]);
+
+  const getActionItems = useCallback(() => {
+    // 1. Job Actions
+    const jobActions = enrichedJobs
+      .filter(j => j.nextAction && j.status !== 'Rejected' && j.status !== 'Withdrawn' && j.status !== 'Wishlist')
+      .map(j => ({
+        ...j,
+        type: 'job',
+        displayText: j.nextAction,
+        subText: `${j.role} @ ${j.company}`,
+        date: j.date,
+        sortDate: j.date ? new Date(j.date) : new Date(8640000000000000) // Future date if missing to push to bottom of specific sorts, but here we want top?
+      }));
+
+    // 2. Stale Contacts (older than 14 days)
+    const stalePeople = getStaleContacts(14).map(c => ({
+      ...c,
+      type: 'contact',
+      displayText: `Follow up: ${c.name}`,
+      subText: `${c.role} @ ${c.company}`,
+      date: c.lastContact,
+      sortDate: c.lastContact ? new Date(c.lastContact) : new Date(0) // Old date if missing
+    }));
+
+    // 3. Merge and Sort (Oldest dates first = higher urgency for contacts, upcoming dates for jobs)
+    // Actually, for a "ToDo" list:
+    // - Overdue jobs/contacts should be top.
+    // - Upcoming jobs should be next.
+    return [...jobActions, ...stalePeople].sort((a, b) => a.sortDate - b.sortDate);
+  }, [enrichedJobs, getStaleContacts]);
 
   const value = {
     loading,
@@ -515,6 +709,7 @@ export const JobProvider = ({ children }) => {
     deleteJob,
     moveJob,
     fetchJobDetail,
+    clearJobAction,
     
     // Activity Actions
     addActivity,
@@ -526,6 +721,15 @@ export const JobProvider = ({ children }) => {
     touchContact,
     deleteContact,
 
+    // Engagement Actions
+    fetchContactEngagements,
+    createEngagement,
+    fetchEngagementDetail,
+    updateEngagement,
+    deleteEngagement,
+    addEngagementMessage,
+    deleteEngagementMessage,
+
     // Resume Actions
     fetchResume,
     createResume,
@@ -534,7 +738,8 @@ export const JobProvider = ({ children }) => {
     // Selectors
     getCompanyDeepView,
     getStaleContacts,
-    getTodayOutreachCount
+    getTodayOutreachCount,
+    getActionItems
   };
 
   return (

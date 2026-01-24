@@ -12,6 +12,7 @@ import CompanyDetail from './pages/CompanyDetail';
 import Networking from './pages/Networking';
 import ResumeStudio from './pages/ResumeStudio';
 import Library from './pages/Library';
+import AgentChat from './components/AgentChat';
 import { JobProvider } from './store/JobContext';
 
 const drawerWidth = 240;
@@ -36,6 +37,9 @@ function AppContent() {
           <Route path="/library" element={<Library />} />
         </Routes>
       </Box>
+      
+      {/* Global Agent Chat - available on all pages */}
+      <AgentChat />
     </Box>
   );
 }

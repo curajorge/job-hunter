@@ -65,3 +65,32 @@ CREATE TABLE IF NOT EXISTS contacts (
     FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL,
     FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE SET NULL
 );
+
+-- Engagement Threads (container for a conversation or post interaction)
+CREATE TABLE IF NOT EXISTS engagement_threads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contact_id INTEGER NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('post_comment', 'dm', 'connection_request')),
+    platform TEXT DEFAULT 'linkedin',
+    source_url TEXT,
+    source_title TEXT,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'pending', 'no_reply', 'replied', 'converted')),
+    started_at TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
+);
+
+-- Engagement Messages (individual messages within a thread)
+CREATE TABLE IF NOT EXISTS engagement_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id INTEGER NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('outbound', 'inbound')),
+    content TEXT NOT NULL,
+    date TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (thread_id) REFERENCES engagement_threads(id) ON DELETE CASCADE
+);
+
+-- Indexes for engagement tables
+CREATE INDEX IF NOT EXISTS idx_threads_contact ON engagement_threads(contact_id);
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON engagement_messages(thread_id);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Drawer,
   Box,
@@ -23,15 +23,25 @@ import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Cancel';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
+import AddIcon from '@mui/icons-material/Add';
 import { useJobContext } from '../store/JobContext';
+import EngagementList from './EngagementList';
+import EngagementDetail from './EngagementDetail';
+import AddEngagementModal from './AddEngagementModal';
 
 const BUCKET_OPTIONS = ['Recruiters', 'Hiring Managers', 'Former Colleagues'];
 
 function ContactDrawer({ contact, open, onClose }) {
-  const { updateContact, touchContact, companies } = useJobContext();
+  const { updateContact, touchContact, companies, deleteEngagement } = useJobContext();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({});
+  
+  // Engagement state
+  const [engagementModalOpen, setEngagementModalOpen] = useState(false);
+  const [selectedEngagement, setSelectedEngagement] = useState(null);
+  const [engagementDetailOpen, setEngagementDetailOpen] = useState(false);
+  const [engagementListKey, setEngagementListKey] = useState(0);
 
   // Reset form when contact changes
   useEffect(() => {
@@ -49,6 +59,10 @@ function ContactDrawer({ contact, open, onClose }) {
     }
     setEditing(false);
   }, [contact]);
+
+  const refreshEngagements = useCallback(() => {
+    setEngagementListKey(prev => prev + 1);
+  }, []);
 
   if (!contact) return null;
 
@@ -130,226 +144,280 @@ function ContactDrawer({ contact, open, onClose }) {
     }
   };
 
+  const handleEngagementSelect = (engagement) => {
+    setSelectedEngagement(engagement);
+    setEngagementDetailOpen(true);
+  };
+
+  const handleEngagementDelete = async (threadId) => {
+    try {
+      await deleteEngagement(threadId);
+      setEngagementDetailOpen(false);
+      setSelectedEngagement(null);
+      refreshEngagements();
+    } catch (err) {
+      console.error('Failed to delete engagement:', err);
+    }
+  };
+
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={onClose}
-      PaperProps={{
-        sx: { width: { xs: '100%', sm: 420 }, bgcolor: '#1e1e1e' }
-      }}
-    >
-      <Box sx={{ p: 3 }}>
-        {/* Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Avatar sx={{ width: 56, height: 56, bgcolor: '#333', fontSize: '1.25rem' }}>
-              {getInitials(contact.name)}
-            </Avatar>
-            <Box>
-              {editing ? (
-                <TextField
-                  name="name"
-                  value={form.name}
-                  onChange={handleChange}
-                  size="small"
-                  sx={{ mb: 0.5 }}
-                />
-              ) : (
-                <Typography variant="h6" fontWeight="bold">{contact.name}</Typography>
-              )}
-              <Typography variant="body2" color="text.secondary">
-                {contact.role} @ {contact.company}
-              </Typography>
-            </Box>
-          </Box>
-          <IconButton onClick={onClose} size="small">
-            <CloseIcon />
-          </IconButton>
-        </Box>
-
-        {/* Status Badge */}
-        <Box sx={{ mb: 3 }}>
-          <Chip 
-            label={staleStatus.label} 
-            color={staleStatus.color} 
-            size="small" 
-            variant="outlined"
-          />
-        </Box>
-
-        {/* Quick Actions */}
-        <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap' }}>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<TouchAppIcon />}
-            onClick={handleReachOut}
-            size="small"
-          >
-            Reach Out & Log
-          </Button>
-          {contact.linkedinUrl && (
-            <IconButton onClick={handleLinkedIn} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
-              <LinkedInIcon color="primary" />
-            </IconButton>
-          )}
-          {contact.email && (
-            <IconButton onClick={handleEmail} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
-              <EmailIcon />
-            </IconButton>
-          )}
-          {contact.phone && (
-            <IconButton onClick={handlePhone} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
-              <PhoneIcon />
-            </IconButton>
-          )}
-        </Box>
-
-        <Divider sx={{ my: 2, borderColor: '#333' }} />
-
-        {/* Edit Toggle */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="subtitle2" color="text.secondary">Contact Details</Typography>
-          {!editing ? (
-            <Button size="small" startIcon={<EditIcon />} onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-          ) : (
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button size="small" startIcon={<CancelIcon />} onClick={handleCancel} disabled={saving}>
-                Cancel
-              </Button>
-              <Button size="small" variant="contained" startIcon={<SaveIcon />} onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-            </Box>
-          )}
-        </Box>
-
-        {/* Details Form */}
-        {editing ? (
-          <Stack spacing={2}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Company</InputLabel>
-              <Select
-                name="companyId"
-                value={form.companyId}
-                onChange={handleChange}
-                label="Company"
-              >
-                <MenuItem value=""><em>No company</em></MenuItem>
-                {companies.map(c => (
-                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <TextField
-              name="role"
-              label="Role / Title"
-              value={form.role}
-              onChange={handleChange}
-              fullWidth
-              size="small"
-            />
-
-            <FormControl fullWidth size="small">
-              <InputLabel>Bucket</InputLabel>
-              <Select
-                name="bucket"
-                value={form.bucket}
-                onChange={handleChange}
-                label="Bucket"
-              >
-                {BUCKET_OPTIONS.map(b => (
-                  <MenuItem key={b} value={b}>{b}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <TextField
-              name="email"
-              label="Email"
-              type="email"
-              value={form.email}
-              onChange={handleChange}
-              fullWidth
-              size="small"
-            />
-
-            <TextField
-              name="linkedinUrl"
-              label="LinkedIn URL"
-              value={form.linkedinUrl}
-              onChange={handleChange}
-              fullWidth
-              size="small"
-            />
-
-            <TextField
-              name="phone"
-              label="Phone"
-              value={form.phone}
-              onChange={handleChange}
-              fullWidth
-              size="small"
-            />
-
-            <TextField
-              name="notes"
-              label="Notes"
-              value={form.notes}
-              onChange={handleChange}
-              fullWidth
-              multiline
-              rows={3}
-              size="small"
-            />
-          </Stack>
-        ) : (
-          <Stack spacing={2}>
-            {contact.email && (
+    <>
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={onClose}
+        PaperProps={{
+          sx: { width: { xs: '100%', sm: 420 }, bgcolor: '#1e1e1e' }
+        }}
+      >
+        <Box sx={{ p: 3, overflowY: 'auto', height: '100%' }}>
+          {/* Header */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Avatar sx={{ width: 56, height: 56, bgcolor: '#333', fontSize: '1.25rem' }}>
+                {getInitials(contact.name)}
+              </Avatar>
               <Box>
-                <Typography variant="caption" color="text.secondary">Email</Typography>
-                <Typography variant="body2">{contact.email}</Typography>
-              </Box>
-            )}
-            {contact.linkedinUrl && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">LinkedIn</Typography>
-                <Typography 
-                  variant="body2" 
-                  component="a" 
-                  href={contact.linkedinUrl} 
-                  target="_blank"
-                  sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-                >
-                  {contact.linkedinUrl}
+                {editing ? (
+                  <TextField
+                    name="name"
+                    value={form.name}
+                    onChange={handleChange}
+                    size="small"
+                    sx={{ mb: 0.5 }}
+                  />
+                ) : (
+                  <Typography variant="h6" fontWeight="bold">{contact.name}</Typography>
+                )}
+                <Typography variant="body2" color="text.secondary">
+                  {contact.role} @ {contact.company}
                 </Typography>
               </Box>
+            </Box>
+            <IconButton onClick={onClose} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+
+          {/* Status Badge */}
+          <Box sx={{ mb: 3 }}>
+            <Chip 
+              label={staleStatus.label} 
+              color={staleStatus.color} 
+              size="small" 
+              variant="outlined"
+            />
+          </Box>
+
+          {/* Quick Actions */}
+          <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<TouchAppIcon />}
+              onClick={handleReachOut}
+              size="small"
+            >
+              Reach Out & Log
+            </Button>
+            {contact.linkedinUrl && (
+              <IconButton onClick={handleLinkedIn} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+                <LinkedInIcon color="primary" />
+              </IconButton>
+            )}
+            {contact.email && (
+              <IconButton onClick={handleEmail} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+                <EmailIcon />
+              </IconButton>
             )}
             {contact.phone && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">Phone</Typography>
-                <Typography variant="body2">{contact.phone}</Typography>
+              <IconButton onClick={handlePhone} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+                <PhoneIcon />
+              </IconButton>
+            )}
+          </Box>
+
+          <Divider sx={{ my: 2, borderColor: '#333' }} />
+
+          {/* Edit Toggle */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="subtitle2" color="text.secondary">Contact Details</Typography>
+            {!editing ? (
+              <Button size="small" startIcon={<EditIcon />} onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+            ) : (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" startIcon={<CancelIcon />} onClick={handleCancel} disabled={saving}>
+                  Cancel
+                </Button>
+                <Button size="small" variant="contained" startIcon={<SaveIcon />} onClick={handleSave} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
               </Box>
             )}
-            {contact.notes && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">Notes</Typography>
-                <Typography variant="body2" sx={{ fontStyle: 'italic' }}>"{contact.notes}"</Typography>
-              </Box>
-            )}
-            {!contact.email && !contact.linkedinUrl && !contact.phone && !contact.notes && (
-              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                No additional details. Click Edit to add more info.
-              </Typography>
-            )}
-          </Stack>
-        )}
-      </Box>
-    </Drawer>
+          </Box>
+
+          {/* Details Form */}
+          {editing ? (
+            <Stack spacing={2}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Company</InputLabel>
+                <Select
+                  name="companyId"
+                  value={form.companyId}
+                  onChange={handleChange}
+                  label="Company"
+                >
+                  <MenuItem value=""><em>No company</em></MenuItem>
+                  {companies.map(c => (
+                    <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                name="role"
+                label="Role / Title"
+                value={form.role}
+                onChange={handleChange}
+                fullWidth
+                size="small"
+              />
+
+              <FormControl fullWidth size="small">
+                <InputLabel>Bucket</InputLabel>
+                <Select
+                  name="bucket"
+                  value={form.bucket}
+                  onChange={handleChange}
+                  label="Bucket"
+                >
+                  {BUCKET_OPTIONS.map(b => (
+                    <MenuItem key={b} value={b}>{b}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                name="email"
+                label="Email"
+                type="email"
+                value={form.email}
+                onChange={handleChange}
+                fullWidth
+                size="small"
+              />
+
+              <TextField
+                name="linkedinUrl"
+                label="LinkedIn URL"
+                value={form.linkedinUrl}
+                onChange={handleChange}
+                fullWidth
+                size="small"
+              />
+
+              <TextField
+                name="phone"
+                label="Phone"
+                value={form.phone}
+                onChange={handleChange}
+                fullWidth
+                size="small"
+              />
+
+              <TextField
+                name="notes"
+                label="Notes"
+                value={form.notes}
+                onChange={handleChange}
+                fullWidth
+                multiline
+                rows={3}
+                size="small"
+              />
+            </Stack>
+          ) : (
+            <Stack spacing={2}>
+              {contact.email && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Email</Typography>
+                  <Typography variant="body2">{contact.email}</Typography>
+                </Box>
+              )}
+              {contact.linkedinUrl && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">LinkedIn</Typography>
+                  <Typography 
+                    variant="body2" 
+                    component="a" 
+                    href={contact.linkedinUrl} 
+                    target="_blank"
+                    sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                  >
+                    {contact.linkedinUrl}
+                  </Typography>
+                </Box>
+              )}
+              {contact.phone && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Phone</Typography>
+                  <Typography variant="body2">{contact.phone}</Typography>
+                </Box>
+              )}
+              {contact.notes && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Notes</Typography>
+                  <Typography variant="body2" sx={{ fontStyle: 'italic' }}>"{contact.notes}"</Typography>
+                </Box>
+              )}
+              {!contact.email && !contact.linkedinUrl && !contact.phone && !contact.notes && (
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                  No additional details. Click Edit to add more info.
+                </Typography>
+              )}
+            </Stack>
+          )}
+
+          {/* Engagement History Section */}
+          <Divider sx={{ my: 2, borderColor: '#333' }} />
+          
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="subtitle2" color="text.secondary">Engagement History</Typography>
+            <IconButton size="small" onClick={() => setEngagementModalOpen(true)} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </Box>
+
+          <EngagementList 
+            key={engagementListKey}
+            contactId={contact.id} 
+            onSelect={handleEngagementSelect} 
+          />
+        </Box>
+      </Drawer>
+
+      {/* Engagement Modal */}
+      <AddEngagementModal
+        open={engagementModalOpen}
+        onClose={() => setEngagementModalOpen(false)}
+        contactId={contact.id}
+        onSuccess={refreshEngagements}
+      />
+
+      {/* Engagement Detail Drawer */}
+      <EngagementDetail
+        threadId={selectedEngagement?.id}
+        open={engagementDetailOpen}
+        onClose={() => {
+          setEngagementDetailOpen(false);
+          setSelectedEngagement(null);
+        }}
+        onDelete={handleEngagementDelete}
+        onUpdate={refreshEngagements}
+      />
+    </>
   );
 }
 

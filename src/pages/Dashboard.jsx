@@ -1,9 +1,31 @@
+import { useState } from 'react';
 import { useJobContext } from '../store/JobContext';
-import { Grid, Paper, Typography, Box, Chip, LinearProgress, CircularProgress } from '@mui/material';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import { Grid, Typography, Box, CircularProgress, SpeedDial, SpeedDialIcon, SpeedDialAction } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import PersonAddIcon from '@mui/icons-material/PersonAdd';
+import WorkIcon from '@mui/icons-material/Work';
+import NoteAddIcon from '@mui/icons-material/NoteAdd';
+import OutreachGoalTracker from '../components/OutreachGoalTracker';
+import MiniPipelineSummary from '../components/MiniPipelineSummary';
+import ActionItemCard from '../components/ActionItemCard';
+import BucketWidget from '../components/BucketWidget';
+import AddActivityModal from '../components/AddActivityModal';
+import AddJobModal from '../components/AddJobModal';
+import AddContactModal from '../components/AddContactModal';
+import ContactDrawer from '../components/ContactDrawer';
 
 function Dashboard() {
-  const { jobs, loading } = useJobContext();
+  const { jobs, loading, getTodayOutreachCount, getActionItems, addActivity, clearJobAction, touchContact } = useJobContext();
+  
+  // Modals state
+  const [jobModalOpen, setJobModalOpen] = useState(false);
+  const [contactModalOpen, setContactModalOpen] = useState(false);
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
+  
+  // Interactive state
+  const [selectedActionItem, setSelectedActionItem] = useState(null);
+  const [drawerContact, setDrawerContact] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   if (loading) {
     return (
@@ -13,81 +35,117 @@ function Dashboard() {
     );
   }
 
-  // Compute Metrics
-  const activeApplications = jobs.filter(j => ['Applied', 'Interviewing'].includes(j.status)).length;
-  const interviews = jobs.filter(j => j.status === 'Interviewing').length;
-  const offers = jobs.filter(j => j.status === 'Offer').length;
-  const interviewProgress = jobs.length > 0 ? (interviews / jobs.length) * 100 : 0;
-  
+  const actionItems = getActionItems();
+  const todayCount = getTodayOutreachCount();
+
+  // Handlers
+  const handleCompleteAction = (item) => {
+    if (item.type === 'job') {
+      // For jobs, we open the activity logger to "prove" it was done
+      setSelectedActionItem(item);
+      setActivityModalOpen(true);
+    } else {
+      // For contacts, we just touch them immediately
+      touchContact(item.id);
+    }
+  };
+
+  const handleActivitySubmit = async (activityData) => {
+    if (selectedActionItem && selectedActionItem.type === 'job') {
+        // 1. Log activity
+        await addActivity(selectedActionItem.id, activityData);
+        // 2. Clear the "Next Action" field
+        await clearJobAction(selectedActionItem.id);
+    }
+    // If it was a generic activity log (from FAB), we assume the user picks the job in a more complex modal,
+    // but here we are using a simplified flow bound to the specific item.
+  };
+
+  const handleItemClick = (item) => {
+      if (item.type === 'contact') {
+          setDrawerContact(item);
+          setDrawerOpen(true);
+      }
+      // For jobs, maybe navigate to details? For now, do nothing or expand.
+  };
+
+  const fabActions = [
+    { icon: <WorkIcon />, name: 'Add Job', onClick: () => setJobModalOpen(true) },
+    { icon: <PersonAddIcon />, name: 'Add Contact', onClick: () => setContactModalOpen(true) },
+    // { icon: <NoteAddIcon />, name: 'Log Activity', onClick: () => {} }, // Generic log activity requires selecting a job first, skipped for simplicity in this iteration
+  ];
+
   return (
-    <Box sx={{ p: 0 }}>
-      <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>Command Center</Typography>
+    <Box sx={{ p: 0, pb: 8 }}>
+      <Typography variant="h5" sx={{ mb: 3, fontWeight: 700 }}>Good Morning, Jorge</Typography>
       
-      {/* KPI Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={4}>
-          <Paper sx={{ p: 3, background: 'linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)', color: 'white' }}>
-            <Typography variant="subtitle2" sx={{ opacity: 0.8 }}>ACTIVE PIPELINE</Typography>
-            <Typography variant="h2" sx={{ fontWeight: 'bold' }}>{activeApplications}</Typography>
-            <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', mt: 1, opacity: 0.8 }}>
-              <TrendingUpIcon fontSize="small" sx={{ mr: 0.5 }} /> {jobs.length} total tracked
-            </Typography>
-          </Paper>
+        {/* Row 1: Goals & Momentum */}
+        <Grid item xs={12} md={8}>
+            <OutreachGoalTracker todayCount={todayCount} />
         </Grid>
-        <Grid item xs={12} sm={4}>
-          <Paper sx={{ p: 3, bgcolor: '#1e1e1e' }}>
-            <Typography color="text.secondary" variant="subtitle2">INTERVIEWS</Typography>
-            <Typography variant="h2" color="secondary" sx={{ fontWeight: 'bold' }}>{interviews}</Typography>
-            <LinearProgress variant="determinate" value={interviewProgress} color="secondary" sx={{ mt: 2, height: 6, borderRadius: 3 }} />
-          </Paper>
+        <Grid item xs={12} md={4}>
+            <MiniPipelineSummary jobs={jobs} />
         </Grid>
-        <Grid item xs={12} sm={4}>
-          <Paper sx={{ p: 3, bgcolor: '#1e1e1e' }}>
-            <Typography color="text.secondary" variant="subtitle2">OFFERS</Typography>
-            <Typography variant="h2" sx={{ color: '#00e676', fontWeight: 'bold' }}>{offers}</Typography>
-            <Typography variant="caption" color="text.secondary">{offers > 0 ? 'Action required' : 'Keep pushing!'}</Typography>
-          </Paper>
+
+        {/* Row 2: The Work */}
+        <Grid item xs={12} md={8}>
+             <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>Action Items</Typography>
+             {actionItems.length === 0 ? (
+                <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed #444', borderRadius: 2 }}>
+                    <Typography color="text.secondary">You're all caught up! Great work.</Typography>
+                </Box>
+             ) : (
+                 actionItems.map(item => (
+                     <ActionItemCard 
+                        key={`${item.type}-${item.id}`} 
+                        item={item} 
+                        onComplete={handleCompleteAction}
+                        onClick={handleItemClick}
+                     />
+                 ))
+             )}
+        </Grid>
+
+        {/* Row 3: Widgets */}
+        <Grid item xs={12} md={4}>
+             <BucketWidget onContactClick={(contact) => { setDrawerContact(contact); setDrawerOpen(true); }} />
         </Grid>
       </Grid>
 
-      {/* Immediate Actions (6/45 Method) */}
-      <Typography variant="h5" sx={{ mb: 2, mt: 4 }}>Today's Focus (6/45 Method)</Typography>
-      {jobs.length === 0 ? (
-        <Paper sx={{ p: 4, bgcolor: '#1e1e1e', textAlign: 'center' }}>
-          <Typography color="text.secondary">No jobs tracked yet. Add companies and jobs to get started!</Typography>
-        </Paper>
-      ) : (
-        <Paper sx={{ p: 0, overflow: 'hidden', bgcolor: '#1e1e1e' }}>
-          {jobs.filter(j => j.nextAction).map((job) => (
-            <Box key={job.id} sx={{ 
-              p: 2, 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-              '&:last-child': { borderBottom: 'none' },
-              transition: 'background-color 0.2s',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.03)' }
-            }}>
-              <Box>
-                <Typography variant="subtitle1" fontWeight="bold">{job.nextAction}</Typography>
-                <Typography variant="body2" color="text.secondary">{job.role} at <span style={{ color: '#90caf9' }}>{job.company}</span></Typography>
-              </Box>
-              <Chip 
-                label={job.status} 
-                color={job.status === 'Offer' ? 'success' : job.status === 'Interviewing' ? 'secondary' : 'default'} 
-                size="small" 
-                variant="outlined"
-              />
-            </Box>
-          ))}
-          {jobs.filter(j => j.nextAction).length === 0 && (
-            <Box sx={{ p: 3, textAlign: 'center' }}>
-              <Typography color="text.secondary">No pending actions. Add next actions to your jobs!</Typography>
-            </Box>
-          )}
-        </Paper>
-      )}
+      {/* Global Quick Add FAB */}
+      <SpeedDial
+        ariaLabel="Quick Add"
+        sx={{ position: 'fixed', bottom: 32, right: 32 }}
+        icon={<SpeedDialIcon />}
+      >
+        {fabActions.map((action) => (
+          <SpeedDialAction
+            key={action.name}
+            icon={action.icon}
+            tooltipTitle={action.name}
+            onClick={action.onClick}
+          />
+        ))}
+      </SpeedDial>
+
+      {/* Modals */}
+      <AddJobModal open={jobModalOpen} onClose={() => setJobModalOpen(false)} />
+      <AddContactModal open={contactModalOpen} onClose={() => setContactModalOpen(false)} />
+      
+      {/* Contextual Activity Modal for Action Items */}
+      <AddActivityModal 
+        open={activityModalOpen} 
+        onClose={() => setActivityModalOpen(false)}
+        onSubmit={handleActivitySubmit}
+      />
+
+      {/* Contact Details */}
+      <ContactDrawer 
+        contact={drawerContact} 
+        open={drawerOpen} 
+        onClose={() => setDrawerOpen(false)} 
+      />
     </Box>
   );
 }
