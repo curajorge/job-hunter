@@ -15,16 +15,15 @@ Unlike generic spreadsheets or Notion templates, Job Hunter features an embedded
 *   **Contact Buckets:** Organizes connections into strategic tiers (Recruiters, Hiring Managers, Former Colleagues) to ensure balanced networking.
 *   **Staleness Algorithms:** Automatically flags contacts you haven't spoken to in defined periods (e.g., 14 days), preventing relationships from going cold.
 *   **Engagement History:** Detailed logging of multi-turn conversations across LinkedIn, Email, and other channels.
+### AI Copilot
+*   **Local or Cloud LLMs:** Supports OpenAI, Anthropic, and Ollama via standard API keys.
+*   **Context Aware:** The agent has read/write access to your database. It can answer questions like "Who should I follow up with today?" or "Add this job description to my wishlist."
+*   **Intelligent Parsing:** Paste unstructured job postings or LinkedIn messages, and the agent will extract structured data (Salary, Role, Company, Requirements) into your database.
 
 ### Resume Studio
 *   **Version Control:** Create and manage multiple versions of your resume tailored to specific roles.
 *   **Job Linking:** Associate specific resume versions with job applications to track exactly which document secured an interview.
 *   **JSON-Based Editing:** Structured data entry ensures formatting consistency across all versions.
-
-### AI Copilot
-*   **Local or Cloud LLMs:** Supports OpenAI, Anthropic, and Ollama via standard API keys.
-*   **Context Aware:** The agent has read/write access to your database. It can answer questions like "Who should I follow up with today?" or "Add this job description to my wishlist."
-*   **Intelligent Parsing:** Paste unstructured job postings or LinkedIn messages, and the agent will extract structured data (Salary, Role, Company, Requirements) into your database.
 
 ## Technical Architecture
 
